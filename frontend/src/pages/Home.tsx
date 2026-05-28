@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#e8effe] text-[#1a2340] flex flex-col font-sans">
       <header className="bg-[#0C4AB5] text-white p-6 shadow-md flex justify-center items-center">
-        <h1 className="text-3xl font-bold tracking-wide">DonaFácil Entretenimiento</h1>
+        <h1 className="text-3xl font-bold tracking-wide">DonaFácil Play</h1>
       </header>
 
       <main className="flex-1 container mx-auto p-6 flex flex-col items-center">
