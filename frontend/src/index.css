@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Raleway font */
+@font-face {
+  font-family: 'Raleway';
+  src: url('/fonts/raleway/1Ptug8zYS_SKggPNyCAIT4ttDfCmxA.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Raleway';
+  src: url('/fonts/raleway/1Ptug8zYS_SKggPNyCkIT4ttDfCmxA.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Raleway';
+  src: url('/fonts/raleway/1Ptug8zYS_SKggPNyCIIT4ttDfCmxA.woff2') format('woff2');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Raleway';
+  src: url('/fonts/raleway/1Ptug8zYS_SKggPNyCMIT4ttDfCmxA.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Raleway';
+  src: url('/fonts/raleway/1Ptug8zYS_SKggPNyC0IT4ttDfA.woff2') format('woff2');
+  font-weight: 900; font-style: normal; font-display: swap;
+}
+
+:root {
+  /* DonaFácil brand colors */
+  --df-blue: #0C4AB5;
+  --df-light-blue: #0086CD;
+  --df-yellow: #FDC300;
+  --df-dark-yellow: #EF8614;
+
+  /* Aliases para el app */
+  --df-primary: var(--df-blue);
+  --df-primary-dark: #083790;
+  --df-primary-light: #e8effe;
+  --df-text: #1a2340;
+  --df-text-muted: #6b7ba0;
+  --df-border: #d6dff0;
+
+  font-family: 'Raleway', sans-serif;
+}
+
+body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
