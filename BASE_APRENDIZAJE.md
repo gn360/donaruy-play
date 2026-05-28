@@ -1,7 +1,7 @@
-# Base de Aprendizaje - Entretenimiento
+# Base de Aprendizaje - Entretenimiento (donaruy-play)
 
 - **Puerto Expuesto**: `8031`
-- **Dominio Futuro**: `entretenimiento.donafacil.uy`
+- **Dominio Futuro**: `play.donafacil.uy`
 - **Tecnologías**: React, Tailwind CSS, Vite
 - **Estructura**: Juegos independientes en la carpeta `/src/games`.
 
