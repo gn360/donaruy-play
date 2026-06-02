@@ -54,34 +54,17 @@ jobs:
       SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
 
     steps:
-      - name: Debug SSH key input
-        shell: bash
-        run: |
-          echo "=== Checking SSH_PRIVATE_KEY format ==="
-          KEY="${{ secrets.SSH_PRIVATE_KEY }}"
-          
-          echo "Raw length: ${#KEY}"
-          echo "Contains literal \\n: $(echo "$KEY" | grep -c '\\n' || echo '0')"
-          echo "Contains actual newlines: $(echo "$KEY" | grep -c $'\n' || echo '0')"
-          
-          if echo "$KEY" | grep -q '\\n'; then
-            echo "→ Key has literal \\n, needs conversion"
-          else
-            echo "→ Key has actual newlines (correct format)"
-          fi
-
       - name: Setup SSH key
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=== [1/4] Creating SSH directory ==="
+          echo "=== [1/3] Creating SSH directory ==="
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           echo "✓ SSH directory ready"
 
-          echo "=== [2/4] Writing SSH private key ==="
-          # Handle both: literal \n and actual newlines
+          echo "=== [2/3] Writing SSH private key ==="
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "✓ SSH key written ($(wc -c < ~/.ssh/id_ed25519) bytes)"
@@ -91,39 +74,26 @@ jobs:
           echo "Last line: $(tail -1 ~/.ssh/id_ed25519)"
           echo "Total lines: $(wc -l < ~/.ssh/id_ed25519)"
           
-          echo "=== [2c] Detailed line analysis ==="
-          nl -ba ~/.ssh/id_ed25519 | head -2
-          nl -ba ~/.ssh/id_ed25519 | tail -2
-          
-          echo "=== [2d] Hex dump of first 50 bytes ==="
-          xxd -l 50 ~/.ssh/id_ed25519
-          
-          echo "=== [2e] Check for valid PEM markers ==="
           if head -1 ~/.ssh/id_ed25519 | grep -q "BEGIN.*PRIVATE KEY"; then
             echo "✓ Valid BEGIN marker found"
           else
-            echo "✗ No valid BEGIN marker - checking first bytes:"
-            head -1 ~/.ssh/id_ed25519 | od -c | head -3
-          fi
-
-          echo "=== [3/4] Validating SSH key format ==="
-          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 2>&1; then
-            echo "✗ Invalid SSH private key format"
-            echo "Trying with -v for more info..."
-            ssh-keygen -lf ~/.ssh/id_ed25519 || true
+            echo "✗ Invalid key format - no BEGIN marker"
             exit 1
           fi
-          echo "✓ SSH key is valid"
 
-          echo "=== [4/4] Fetching host key ==="
-          echo "Target: ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
-          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err; then
-            echo "✗ Failed to fetch host key"
-            cat /tmp/ssh-keyscan.err
-            exit 1
+          echo "=== [3/3] Setting up SSH agent with passphrase ==="
+          if [[ -n "$SSH_PASSPHRASE" ]]; then
+            eval "$(ssh-agent -s)"
+            printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "$SSH_PASSPHRASE"\n' > ~/.ssh/askpass.sh
+            chmod 700 ~/.ssh/askpass.sh
+            export SSH_ASKPASS="$HOME/.ssh/askpass.sh"
+            export SSH_ASKPASS_REQUIRE=force
+            export DISPLAY=:0
+            setsid ssh-add ~/.ssh/id_ed25519 < /dev/null
+            echo "✓ SSH agent configured with passphrase"
+          else
+            echo "ℹ No passphrase configured"
           fi
-          chmod 644 ~/.ssh/known_hosts
-          echo "✓ Host key added to known_hosts"
 
       - name: Debug SSH key fingerprint
         run: |
@@ -133,7 +103,22 @@ jobs:
           echo "=== Fingerprint of key in secret ==="
           ssh-keygen -lf ~/.ssh/id_ed25519
 
+      - name: Fetch host key
+        shell: bash
+        run: |
+          echo "=== Fetching host key ==="
+          echo "Target: ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+          mkdir -p ~/.ssh
+          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err; then
+            echo "✗ Failed to fetch host key"
+            cat /tmp/ssh-keyscan.err
+            exit 1
+          fi
+          chmod 644 ~/.ssh/known_hosts
+          echo "✓ Host key added to known_hosts"
+
       - name: Validate SSH connectivity
+        shell: bash
         run: |
           echo "=== Testing SSH connection ==="
           echo "User: ${{ secrets.SSH_USER }}"
@@ -141,45 +126,39 @@ jobs:
           echo "Port: ${{ secrets.SSH_PORT }}"
           
           if [[ -n "$SSH_PASSPHRASE" ]]; then
-            echo "[*] Setting up SSH agent with passphrase..."
             eval "$(ssh-agent -s)"
-            trap 'ssh-agent -k' EXIT
             printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "$SSH_PASSPHRASE"\n' > ~/.ssh/askpass.sh
             chmod 700 ~/.ssh/askpass.sh
             export SSH_ASKPASS="$HOME/.ssh/askpass.sh"
             export SSH_ASKPASS_REQUIRE=force
             export DISPLAY=:0
             setsid ssh-add ~/.ssh/id_ed25519 < /dev/null
-            echo "✓ SSH agent configured"
-          else
-            echo "[*] No passphrase - using key directly"
+            echo "✓ SSH agent configured with passphrase"
           fi
           
-          echo "[*] Attempting connection..."
-          if ssh -vvv -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
+          echo "[*] Attempting SSH connection..."
+          ssh -vvv -i ~/.ssh/id_ed25519 -o BatchMode=no -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "echo '[deploy] SSH connection OK'"; then
-            echo "✓ SSH connection successful"
-          else
-            echo "✗ SSH connection failed with exit code $?"
-            exit 1
-          fi
+            "echo '[deploy] SSH connection OK'"
+          echo "✓ SSH connection successful"
 
       - name: Pull new image and restart container
+        shell: bash
         run: |
+          echo "=== Configuring SSH for deploy ==="
           if [[ -n "$SSH_PASSPHRASE" ]]; then
             eval "$(ssh-agent -s)"
-            trap 'ssh-agent -k' EXIT
             printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "$SSH_PASSPHRASE"\n' > ~/.ssh/askpass.sh
             chmod 700 ~/.ssh/askpass.sh
             export SSH_ASKPASS="$HOME/.ssh/askpass.sh"
             export SSH_ASKPASS_REQUIRE=force
             export DISPLAY=:0
             setsid ssh-add ~/.ssh/id_ed25519 < /dev/null
+            echo "✓ SSH agent ready"
           fi
           
           echo "=== Executing deploy commands on server ==="
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'EOF'
           set -ex
           echo "=== [1/5] Entering deployment directory ==="
