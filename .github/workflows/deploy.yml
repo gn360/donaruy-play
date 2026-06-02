@@ -59,22 +59,34 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=== [1/4] Creating SSH directory ==="
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+          echo "✓ SSH directory ready"
 
+          echo "=== [2/4] Writing SSH private key ==="
           cat > ~/.ssh/id_ed25519 <<'EOF'
           ${{ secrets.SSH_PRIVATE_KEY }}
           EOF
-
           chmod 600 ~/.ssh/id_ed25519
+          echo "✓ SSH key written ($(wc -c < ~/.ssh/id_ed25519) bytes)"
 
+          echo "=== [3/4] Validating SSH key format ==="
           if ! ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
-            echo "Invalid SSH private key in SSH_PRIVATE_KEY secret"
+            echo "✗ Invalid SSH private key format"
             exit 1
           fi
+          echo "✓ SSH key is valid"
 
-          ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err
+          echo "=== [4/4] Fetching host key ==="
+          echo "Target: ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err; then
+            echo "✗ Failed to fetch host key"
+            cat /tmp/ssh-keyscan.err
+            exit 1
+          fi
           chmod 644 ~/.ssh/known_hosts
+          echo "✓ Host key added to known_hosts"
 
       - name: Debug SSH key fingerprint
         run: |
@@ -86,7 +98,13 @@ jobs:
 
       - name: Validate SSH connectivity
         run: |
+          echo "=== Testing SSH connection ==="
+          echo "User: ${{ secrets.SSH_USER }}"
+          echo "Host: ${{ secrets.SSH_HOST }}"
+          echo "Port: ${{ secrets.SSH_PORT }}"
+          
           if [[ -n "$SSH_PASSPHRASE" ]]; then
+            echo "[*] Setting up SSH agent with passphrase..."
             eval "$(ssh-agent -s)"
             trap 'ssh-agent -k' EXIT
             printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "$SSH_PASSPHRASE"\n' > ~/.ssh/askpass.sh
@@ -95,10 +113,20 @@ jobs:
             export SSH_ASKPASS_REQUIRE=force
             export DISPLAY=:0
             setsid ssh-add ~/.ssh/id_ed25519 < /dev/null
+            echo "✓ SSH agent configured"
+          else
+            echo "[*] No passphrase - using key directly"
           fi
-          ssh -vvv -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
+          
+          echo "[*] Attempting connection..."
+          if ssh -vvv -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "echo '[deploy] SSH connection OK'"
+            "echo '[deploy] SSH connection OK'"; then
+            echo "✓ SSH connection successful"
+          else
+            echo "✗ SSH connection failed with exit code $?"
+            exit 1
+          fi
 
       - name: Pull new image and restart container
         run: |
@@ -112,12 +140,30 @@ jobs:
             export DISPLAY=:0
             setsid ssh-add ~/.ssh/id_ed25519 < /dev/null
           fi
+          
+          echo "=== Executing deploy commands on server ==="
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${{ secrets.SSH_PORT }}" \
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'EOF'
-          set -e
+          set -ex
+          echo "=== [1/5] Entering deployment directory ==="
           cd "${{ secrets.DEPLOY_PATH }}"
+          pwd
+          
+          echo "=== [2/5] Logging into GHCR ==="
           echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USER }}' --password-stdin
+          echo "✓ GHCR login successful"
+          
+          echo "=== [3/5] Pulling latest image ==="
           IMAGE_TAG=main docker compose pull
+          echo "✓ Image pulled"
+          
+          echo "=== [4/5] Starting containers ==="
           IMAGE_TAG=main docker compose up -d --remove-orphans
+          echo "✓ Containers started"
+          
+          echo "=== [5/5] Cleaning up ==="
           docker image prune -f
+          echo "✓ Cleanup complete"
+          
+          echo "=== Deploy completed successfully ==="
           EOF
