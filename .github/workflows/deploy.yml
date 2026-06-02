@@ -51,16 +51,37 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     env:
-      SSH_PASSPHRASE: ${{ secrets.SSH_PHRASE }}
+      SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
 
     steps:
       - name: Setup SSH key
+        shell: bash
         run: |
+          set -euo pipefail
+
+          : "${{ secrets.SSH_PRIVATE_KEY }}"
+          : "${{ secrets.SSH_HOST }}"
+          : "${{ secrets.SSH_PORT }}"
+          : "${{ secrets.SSH_USER }}"
+
           mkdir -p ~/.ssh
-          printf "%s\n" "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 700 ~/.ssh
+
+          printf "%s\n" "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
+            echo "Invalid SSH private key in SSH_PRIVATE_KEY secret"
+            exit 1
+          fi
+
+          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err; then
+            echo "Failed to fetch host key for ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+            cat /tmp/ssh-keyscan.err
+            exit 1
+          fi
+
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Debug SSH key fingerprint
         run: |
