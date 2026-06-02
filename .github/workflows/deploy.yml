@@ -65,8 +65,7 @@ jobs:
           echo "✓ SSH directory ready"
 
           echo "=== [2/4] Writing SSH private key ==="
-          # Decode base64 secret to file
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "✓ SSH key written ($(wc -c < ~/.ssh/id_ed25519) bytes)"
           
