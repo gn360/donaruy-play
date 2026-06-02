@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   frontend:
-    build:
-      context: ./frontend
+    image: ghcr.io/${{ GITHUB_REPOSITORY }}:${IMAGE_TAG:-main}
     ports:
       - "8031:8031"
     restart: unless-stopped
