@@ -65,25 +65,18 @@ jobs:
           echo "✓ SSH directory ready"
 
           echo "=== [2/4] Writing SSH private key ==="
-          cat > ~/.ssh/id_ed25519 <<'EOF'
-          ${{ secrets.SSH_PRIVATE_KEY }}
-          EOF
-          # Remove leading whitespace from each line (heredoc indentation)
-          sed -i 's/^[[:space:]]*//g' ~/.ssh/id_ed25519
+          # Decode base64 secret to file
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "✓ SSH key written ($(wc -c < ~/.ssh/id_ed25519) bytes)"
           
-          echo "=== [2b] SSH key content (first & last 2 lines) ==="
-          echo "First line:"
-          head -1 ~/.ssh/id_ed25519
-          echo "Last line:"
-          tail -1 ~/.ssh/id_ed25519
+          echo "=== [2b] SSH key format check ==="
+          echo "First line: $(head -1 ~/.ssh/id_ed25519)"
+          echo "Last line: $(tail -1 ~/.ssh/id_ed25519)"
 
           echo "=== [3/4] Validating SSH key format ==="
           if ! ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
             echo "✗ Invalid SSH private key format"
-            echo "Key file content:"
-            cat ~/.ssh/id_ed25519
             exit 1
           fi
           echo "✓ SSH key is valid"
