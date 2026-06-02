@@ -107,12 +107,25 @@ jobs:
         shell: bash
         run: |
           echo "=== Fetching host key ==="
-          echo "Target: ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+          echo "SSH_HOST: ${{ secrets.SSH_HOST }}"
+          echo "SSH_PORT: ${{ secrets.SSH_PORT }}"
+          
           mkdir -p ~/.ssh
-          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err; then
+          
+          echo "=== Verifying host connectivity ==="
+          if ! nc -zv -w 5 "${{ secrets.SSH_HOST }}" "${{ secrets.SSH_PORT }}" 2>&1; then
+            echo "✗ Cannot reach ${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+            echo "Trying with timeout 10s..."
+          fi
+          
+          echo "=== Attempting ssh-keyscan ==="
+          if ! ssh-keyscan -T 10 -H -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>&1; then
             echo "✗ Failed to fetch host key"
-            cat /tmp/ssh-keyscan.err
-            exit 1
+            echo "Trying without -H flag..."
+            ssh-keyscan -T 10 -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>&1 || {
+              echo "✗ ssh-keyscan failed completely"
+              exit 1
+            }
           fi
           chmod 644 ~/.ssh/known_hosts
           echo "✓ Host key added to known_hosts"
