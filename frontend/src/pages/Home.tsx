@@ -26,6 +26,20 @@ export default function Home() {
             </div>
           </Link>
 
+          {/* Card Michi Runner */}
+          <Link to="/games/michi" className="block group">
+            <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform transition-all group-hover:scale-105 border border-[#d6dff0] hover:border-[#FDC300]">
+              <div className="h-40 bg-gradient-to-br from-[#F28C28] to-[#D9741A] flex items-center justify-center relative overflow-hidden">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#ffffff30_1px,_transparent_1.5px)] bg-[size:20px_20px] opacity-30"></div>
+                <span className="text-6xl drop-shadow-md z-10">🐱</span>
+              </div>
+              <div className="p-6 text-center">
+                <h3 className="text-xl font-bold text-[#1a2340] mb-2 uppercase">Michi Runner</h3>
+                <p className="text-[#6b7ba0] text-sm">El gato naranja recorre Montevideo: esquivá obstáculos, golpeá bloques y sumá puntos.</p>
+              </div>
+            </div>
+          </Link>
+
           {/* Futuros juegos */}
           <div className="bg-white/50 rounded-2xl shadow-sm border border-dashed border-[#6b7ba0] h-[280px] flex flex-col items-center justify-center text-[#6b7ba0] opacity-70">
             <span className="text-4xl mb-2">🔜</span>

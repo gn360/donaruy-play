@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { fetchLeadByCode, fetchAwards, submitShot, updateShot, type LeadData, type PlayGameAward } from '../api/playApi';
+import { showClaimModal } from './ClaimModal';
+import DonationForm from './DonationForm';
 
 const prizes = [
   { name: "¡JUEGO EXTRA!", type: "bonus" },
@@ -12,7 +15,21 @@ const prizes = [
   { name: "¡DESCUENTO!", type: "normal" }
 ];
 
+type Phase = 'loading' | 'playing' | 'exhausted' | 'claimed' | 'donation' | 'error';
+
 export default function RouletteGame() {
+  const [searchParams] = useSearchParams();
+  const code = searchParams.get('code');
+
+  // ── Phase & Lead state ──
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [leadData, setLeadData] = useState<LeadData | null>(null);
+  const [shotsRemaining, setShotsRemaining] = useState(0);
+  const [totalShots, setTotalShots] = useState(0);
+  const [awards, setAwards] = useState<PlayGameAward[]>([]);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // ── Roulette UI state ──
   const [currentRotation, setCurrentRotation] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -24,6 +41,53 @@ export default function RouletteGame() {
   const [revealedChest, setRevealedChest] = useState<any>(null);
   const [otherChest, setOtherChest] = useState<any>(null);
 
+  const currentRotationRef = useRef(0);
+  const lastShotIdRef = useRef<number | null>(null);
+
+  // ── Initialization ──
+  useEffect(() => {
+    async function init() {
+      // Load awards for prize mapping
+      try {
+        const awardsData = await fetchAwards();
+        setAwards(awardsData);
+      } catch { /* awards not critical for free play */ }
+
+      if (code) {
+        try {
+          const data = await fetchLeadByCode(code);
+          setLeadData(data);
+
+          if (data.is_claimed) {
+            setPhase('claimed');
+          } else if (data.is_exhausted) {
+            setPhase('exhausted');
+          } else {
+            setShotsRemaining(data.attempts_remaining);
+            setTotalShots(data.attempts_remaining);
+            setPhase('playing');
+          }
+        } catch {
+          setErrorMsg('El enlace no es válido o ya expiró.');
+          setPhase('error');
+        }
+      } else {
+        setPhase('donation');
+      }
+    }
+    init();
+  }, [code]);
+
+  // ── Trigger claim modal when exhausted ──
+  useEffect(() => {
+    if (phase === 'exhausted' && leadData && code) {
+      showClaimModal(code, leadData.lead.shots || [], () => {
+        setPhase('claimed');
+      });
+    }
+  }, [phase, leadData, code]);
+
+  // ── Toast helpers ──
   const showMessage = (msg: string, isBig = false) => {
     setToastMessage(msg);
     setIsBigToast(isBig);
@@ -74,9 +138,9 @@ export default function RouletteGame() {
   };
 
   const processPrize = (prize: any) => {
-    const baseMessage = `¡¡¡TE GANASTE: ${prize.name}!!!`;
 
     if (prize.type === "normal") {
+      const baseMessage = `¡¡¡TE GANASTE: ${prize.name}!!!`;
       showMessage(baseMessage);
       fireStandardConfetti();
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -88,7 +152,7 @@ export default function RouletteGame() {
       showMessage("¡¡¡UNA TIRADA MÁS!!! ¡GIRANDO DE NUEVO!", true);
       fireStandardConfetti();
       if (navigator.vibrate) navigator.vibrate([200]);
-      setTimeout(() => spin(), 2000);
+      setTimeout(() => spin(true), 2000);
       
     } else if (prize.type === "bonus") {
       showMessage("¡¡¡DESBLOQUEASTE EL JUEGO MISTERIOSO!!!", true);
@@ -102,10 +166,9 @@ export default function RouletteGame() {
     }
   };
 
-  const currentRotationRef = React.useRef(0);
-
-  const spin = () => {
-    if (isSpinning) return;
+  // ── Spin ──
+  const spin = async (isFreeSpin = false) => {
+    if (isSpinning || phase !== 'playing') return;
     setIsSpinning(true);
 
     const minSpins = 4;
@@ -117,17 +180,44 @@ export default function RouletteGame() {
     currentRotationRef.current = newRot;
     setCurrentRotation(newRot);
 
-    setTimeout(() => {
-      setIsSpinning(false);
-      const normalizedAngle = newRot % 360;
-      const sliceIndex = Math.floor(((360 - normalizedAngle + 30) % 360) / 60) % 6;
+    // Calculate prize based on angle
+    const normalizedAngle = newRot % 360;
+    const sliceIndex = Math.floor(((360 - normalizedAngle + 30) % 360) / 60) % 6;
+
+    setTimeout(async () => {
       const prize = prizes[sliceIndex];
       setLastWin(prize.name);
       processPrize(prize);
+
+      // Submit shot to API if we're in lead mode (skip for free spins)
+      if (!isFreeSpin && leadData && code && awards.length > 0) {
+        const award = awards[sliceIndex];
+        if (award) {
+          try {
+            const result = await submitShot(leadData.lead.id, award.id);
+            lastShotIdRef.current = result.shot.id;
+            setShotsRemaining(result.shots_remaining);
+
+            if (result.is_exhausted) {
+              // Update leadData before showing claim modal
+              setLeadData(prev => prev ? {
+                ...prev,
+                is_exhausted: true,
+                attempts_remaining: 0,
+              } : prev);
+              setTimeout(() => setPhase('exhausted'), 4000);
+            }
+          } catch (err) {
+            showMessage('Error al registrar tiro');
+          }
+        }
+      }
+
+      setIsSpinning(false);
     }, 3500);
   };
 
-  const pickChest = (index: number) => {
+  const pickChest = async (index: number) => {
     if (chestSelected !== null) return;
     setChestSelected(index);
 
@@ -150,6 +240,13 @@ export default function RouletteGame() {
 
     setRevealedChest(selectedPrize);
 
+    // Update the shot in DB with the actual bonus prize name
+    if (lastShotIdRef.current) {
+      try {
+        await updateShot(lastShotIdRef.current, { award_title: selectedPrize.name });
+      } catch { /* non-critical */ }
+    }
+
     setTimeout(() => {
       setOtherChest(otherPrizeItem);
     }, 400);
@@ -165,6 +262,66 @@ export default function RouletteGame() {
     }, 800);
   };
 
+  // ── Phase renders ──
+
+  if (phase === 'loading') {
+    return (
+      <div className="bg-[#05100a] h-screen w-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-white/70">
+          <div className="animate-spin rounded-full h-10 w-10 border-4 border-white/20 border-t-yellow-500" />
+          <p>Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'error') {
+    return (
+      <div className="bg-[#05100a] h-screen w-screen flex items-center justify-center">
+        <div className="text-center text-white space-y-4 px-6">
+          <p className="text-xl font-bold text-red-400">Código inválido</p>
+          <p className="text-white/60">{errorMsg}</p>
+          <Link to="/" className="inline-block mt-4 px-6 py-2 bg-yellow-500 text-black rounded-xl font-bold">Volver al inicio</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'claimed') {
+    return (
+      <div className="bg-[#05100a] h-screen w-screen flex items-center justify-center overflow-y-auto py-12">
+        <div className="text-center text-white space-y-4 px-6 max-w-md">
+          <p className="text-3xl">🎉</p>
+          <p className="text-xl font-bold text-yellow-400">¡Ya reclamaste tus premios!</p>
+          {leadData?.shots_summary && leadData.shots_summary.length > 0 ? (
+            <div className="bg-white/5 rounded-xl p-4 text-left space-y-2">
+              {leadData.shots_summary.map((s, i) => (
+                <p key={i} className="text-white/80 text-sm">
+                  🎁 Tiro {s.shot_number}: {s.award_title}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white/5 rounded-xl p-4 text-left space-y-2">
+              {(leadData?.lead?.shots || []).map((s, i) => (
+                <p key={i} className="text-white/80 text-sm">
+                  🎁 Tiro {s.shot_number}: {s.award_title}
+                </p>
+              ))}
+            </div>
+          )}
+          <p className="text-white/50 text-sm">Tus datos fueron registrados. ¡Gracias por jugar!</p>
+          <Link to="/" className="inline-block mt-4 px-6 py-2 bg-yellow-500 text-black rounded-xl font-bold">Volver al inicio</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'donation') {
+    return <DonationForm />;
+  }
+
+  // ── Roulette view (phase === 'playing' or 'exhausted') ──
   return (
     <div className="bg-[#05100a] h-screen w-screen flex flex-col overflow-hidden text-white selection:bg-yellow-500 relative" style={{ fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
       <Link to="/" className="absolute top-4 left-4 z-50 text-white/70 hover:text-white transition-colors bg-white/10 p-2 rounded-full backdrop-blur-md">
@@ -182,9 +339,19 @@ export default function RouletteGame() {
       }}></div>
 
       <header className="flex justify-center items-center p-6 z-10 w-full max-w-md mx-auto pt-16">
-        <h1 className="font-black text-4xl text-yellow-500 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest italic text-center uppercase">
-          ¡Gira y <span className="text-white">Gana!</span>
-        </h1>
+        <div className="text-center">
+          <h1 className="font-black text-4xl text-yellow-500 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest italic uppercase">
+            ¡Gira y <span className="text-white">Gana!</span>
+          </h1>
+          {phase === 'playing' && totalShots > 0 && (
+            <p className="text-white/70 text-sm mt-2">
+              Tiros restantes: <span className="font-bold text-yellow-400">{shotsRemaining}</span>/{totalShots}
+            </p>
+          )}
+          {phase === 'exhausted' && (
+            <p className="text-yellow-400 text-sm mt-2 font-bold">¡Completaste todos tus tiros!</p>
+          )}
+        </div>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center relative w-full px-4">
@@ -279,8 +446,8 @@ export default function RouletteGame() {
 
       <footer className="pb-12 pt-4 z-10 w-full flex flex-col items-center">
         <button 
-          onClick={spin}
-          disabled={isSpinning}
+          onClick={() => spin()}
+          disabled={isSpinning || phase !== 'playing'}
           className="relative group outline-none transform transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 disabled:cursor-not-allowed"
         >
           <div className="absolute inset-0 bg-white rounded-xl blur-xl opacity-10 group-hover:opacity-30 transition-opacity duration-300"></div>

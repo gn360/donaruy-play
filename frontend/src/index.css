@@ -52,3 +52,24 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── Shared form input styles (used by DonationForm) ── */
+.df-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1.5px solid #dde3ed;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  background: #fff;
+  color: #1a2340;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.df-input:focus {
+  border-color: #0C4AB5;
+  box-shadow: 0 0 0 3px rgba(12, 74, 181, 0.1);
+}
+.df-input::placeholder {
+  color: #9aa8c0;
+}
+

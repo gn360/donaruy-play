@@ -43,3 +43,9 @@ docker compose up -d
 - Ahora descarga imagen desde GHCR: `ghcr.io/<repo>:${IMAGE_TAG:-main}`
 - Usa variable `IMAGE_TAG` que se define en el workflow de deploy
 
+## Estado del repo (2026-10-05)
+
+- **Solo frontend**: el árbol contiene `frontend/` (React + Vite) y `docker-compose.yml`; no hay backend en este repo (el backend vive en `donaruyb`, rutas `/api/play`).
+- El último commit es del **2026-06-02** ("auto deploy"). Hay trabajo **local sin commitear** en juegos: `frontend/src/api/apiClient.ts`, `frontend/src/games/RouletteGame.tsx` y `frontend/src/index.css` (modificados), más `frontend/src/api/playApi.ts`, `frontend/src/games/ClaimModal.tsx` y `frontend/src/games/DonationForm.tsx` (nuevos, sin trackear).
+- La rama `main` local está divergente de `origin/main`.
+

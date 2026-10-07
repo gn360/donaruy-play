@@ -10,6 +10,8 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
+    config.headers['x-api-key'] = import.meta.env.VITE_PLAY_API_KEY || 'play-secret-key-dev';
+
     const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
